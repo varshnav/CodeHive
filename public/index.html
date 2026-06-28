@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeHive - Code, Share, Learn</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <div class="logo">Code<span>Hive</span></div>
+        <ul class="nav-links">
+            <li><a href="feed.html">Community</a></li>
+            <li id="nav-editor-link" class="hidden"><a href="editor.html">Editor</a></li>
+            <li id="nav-logout" class="hidden"><a href="#" onclick="logout()">Logout</a></li>
+            <li id="nav-login"><a href="login.html" class="btn-nav">Login</a></li>
+            <li id="nav-register"><a href="register.html" class="btn-nav" style="background:transparent; border: 1px solid #e94560; color:#e94560;">Register</a></li>
+        </ul>
+    </nav>
+
+    <!-- HERO SECTION -->
+    <section class="hero">
+        <h1>Write Code.<br><span>Share It.</span> Learn Together.</h1>
+        <p>CodeHive is a platform for students to write HTML, CSS & JS code, see live previews, and share with the community.</p>
+        <div class="hero-btns">
+            <a href="register.html" class="btn btn-primary">Get Started Free</a>
+            <a href="feed.html" class="btn btn-secondary">Browse Community</a>
+        </div>
+    </section>
+
+    <!-- FEATURES SECTION -->
+    <section class="features-section">
+        <h2 class="text-center" style="font-size:1.6rem;">Why CodeHive?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="icon">⚡</div>
+                <h3>Live Preview</h3>
+                <p>See your HTML, CSS & JS output instantly as you type. No refresh needed.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌍</div>
+                <h3>Share Snippets</h3>
+                <p>Share your code with the community via a public link. Get feedback instantly.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🤖</div>
+                <h3>AI Code Explainer</h3>
+                <p>Paste any code and our AI will explain it in simple English. Learn faster!</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">❤️</div>
+                <h3>Like & Comment</h3>
+                <p>Appreciate others' work with likes and comments. Build your dev community.</p>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // Check if user is already logged in
+        const token = localStorage.getItem('token');
+        if (token) {
+            document.getElementById('nav-login').classList.add('hidden');
+            document.getElementById('nav-register').classList.add('hidden');
+            document.getElementById('nav-logout').classList.remove('hidden');
+            document.getElementById('nav-editor-link').classList.remove('hidden');
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = 'index.html';
+        }
+    </script>
+
+</body>
+</html>

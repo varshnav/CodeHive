@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snippet - CodeHive</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">Code<span>Hive</span></a>
+        <ul class="nav-links">
+            <li><a href="feed.html">Community</a></li>
+            <li id="nav-editor" class="hidden"><a href="editor.html">New Snippet</a></li>
+            <li id="nav-profile" class="hidden"><a href="profile.html">👤 Profile</a></li>
+            <li id="nav-logout" class="hidden"><a href="#" onclick="logout()">Logout</a></li>
+            <li id="nav-login"><a href="login.html" class="btn-nav">Login</a></li>
+        </ul>
+    </nav>
+
+    <!-- SNIPPET VIEW -->
+    <div class="snippet-view-container">
+
+        <!-- SNIPPET HEADER -->
+        <div class="snippet-view-header">
+            <h1 id="snippet-title">Loading...</h1>
+            <div class="snippet-meta" id="snippet-meta"></div>
+            <div style="display:flex; gap:1rem; margin-top:1rem; flex-wrap:wrap;" id="snippet-action-btns">
+                <button class="action-btn" id="like-btn" onclick="likeSnippet()">
+                    ❤️ <span id="like-count">0</span> Likes
+                </button>
+                <button class="action-btn" onclick="copyLink()">
+                    🔗 Copy Link
+                </button>
+                <button class="action-btn hidden" id="edit-btn" onclick="editSnippet()">
+                    ✏️ Edit
+                </button>
+                <button class="action-btn hidden" id="delete-btn" onclick="deleteSnippet()" style="color:var(--accent);">
+                    🗑️ Delete
+                </button>
+                <button class="action-btn hidden" id="fork-btn" onclick="forkSnippet()">
+Fork
+</button>
+            </div>
+        </div>
+
+        <!-- LIVE PREVIEW -->
+        <div class="snippet-preview-box">
+            <iframe id="preview-frame"></iframe>
+        </div>
+
+        <!-- AI EXPLAINER -->
+        <div class="ai-section">
+            <h3>🤖 AI Code Explainer</h3>
+            <p style="color:var(--text-secondary); font-size:0.88rem; margin-bottom:1rem;">
+                Click below to get an AI explanation of this code!
+            </p>
+            <button class="btn btn-secondary" onclick="explainCode()" id="explain-btn">
+                ✨ Explain This Code
+            </button>
+            <div class="ai-response hidden" id="ai-response"></div>
+        </div>
+
+        <!-- COMMENTS SECTION -->
+        <div class="comments-section mt-2">
+            <h3>💬 Comments (<span id="comment-count">0</span>)</h3>
+
+            <!-- ADD COMMENT -->
+            <div class="comment-form" id="comment-form">
+                <input type="text" id="comment-input" placeholder="Write a comment..." />
+                <button class="btn btn-primary" onclick="addComment()">Post</button>
+            </div>
+            <p id="login-to-comment" class="hidden" style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:1rem;">
+                <a href="login.html" style="color:var(--accent);">Login</a> to post a comment.
+            </p>
+
+            <!-- COMMENTS LIST -->
+            <div id="comments-list"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+
+        // Get snippet id from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const snippetId = urlParams.get('id');
+
+        // Update navbar
+        if (token) {
+            document.getElementById('nav-login').classList.add('hidden');
+            document.getElementById('nav-logout').classList.remove('hidden');
+            document.getElementById('nav-editor').classList.remove('hidden');
+            document.getElementById('nav-profile').classList.remove('hidden');
+            document.getElementById('comment-form').classList.remove('hidden');
+            document.getElementById('login-to-comment').classList.add('hidden');
+        } else {
+            document.getElementById('comment-form').classList.add('hidden');
+            document.getElementById('login-to-comment').classList.remove('hidden');
+        }
+
+        // Redirect if no snippet id
+        if (!snippetId) {
+            window.location.href = 'feed.html';
+        }
+
+        // Load snippet and comments
+        loadSnippet();
+        loadComments();
+
+        // LOAD SNIPPET
+        async function loadSnippet() {
+            try {
+                const response = await fetch(`/api/snippets/${snippetId}`);
+                const snippet = await response.json();
+
+                if (!response.ok) {
+                    window.location.href = 'feed.html';
+                    return;
+                }
+
+                // Set title and meta
+                document.title = `${snippet.title} - CodeHive`;
+                document.getElementById('snippet-title').textContent = snippet.title;
+                document.getElementById('snippet-meta').innerHTML = `
+                    <span>👤 ${escapeHtml(snippet.username)}</span>
+                    <span style="margin-left:1rem;">🕒 ${formatDate(snippet.created_at)}</span>
+                `;
+                document.getElementById('like-count').textContent = snippet.like_count;
+
+                // Check if liked
+                if (isLiked(snippetId)) {
+                    document.getElementById('like-btn').classList.add('liked');
+                }
+
+                // Set preview
+                const previewContent = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head><style>${snippet.css_code}</style></head>
+                    <body>
+                        ${snippet.html_code}
+                        <script>${snippet.js_code}<\/script>
+                    </body>
+                    </html>
+                `;
+                document.getElementById('preview-frame').srcdoc = previewContent;
+
+                // Store snippet for AI explainer
+                window.currentSnippet = snippet;
+
+                // Show edit and delete buttons if owner
+                if (user && user.username === snippet.username) {
+    document.getElementById('edit-btn').classList.remove('hidden');
+    document.getElementById('delete-btn').classList.remove('hidden');
+} else if (user) {
+    document.getElementById('fork-btn').classList.remove('hidden');
+}
+
+            } catch (error) {
+                console.error('Failed to load snippet:', error);
+            }
+        }
+
+        // LOAD COMMENTS
+        async function loadComments() {
+            try {
+                const response = await fetch(`/api/comments/${snippetId}`);
+                const comments = await response.json();
+
+                document.getElementById('comment-count').textContent = comments.length;
+
+                const list = document.getElementById('comments-list');
+
+                if (comments.length === 0) {
+                    list.innerHTML = `<p style="color:var(--text-secondary); font-size:0.9rem;">No comments yet. Be the first!</p>`;
+                    return;
+                }
+
+                list.innerHTML = comments.map(c => `
+                    <div class="comment-item" id="comment-${c.id}">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div class="comment-author">👤 ${escapeHtml(c.username)}</div>
+                            ${user && user.username === c.username ? `
+                                <button onclick="deleteComment(${c.id})" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:0.85rem; padding:0.2rem 0.5rem; border-radius:4px;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-secondary)'">🗑️ Delete</button>
+                            ` : ''}
+                        </div>
+                        <div class="comment-text">${escapeHtml(c.comment)}</div>
+                        <div class="comment-time">${formatDate(c.created_at)}</div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Failed to load comments:', error);
+            }
+        }
+
+        // ADD COMMENT
+        async function addComment() {
+            const comment = document.getElementById('comment-input').value.trim();
+            if (!comment) return;
+
+            try {
+                const response = await fetch(`/api/comments/${snippetId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ comment })
+                });
+
+                if (!response.ok) return;
+
+                document.getElementById('comment-input').value = '';
+                loadComments();
+
+            } catch (error) {
+                console.error('Comment failed:', error);
+            }
+        }
+
+        // LIKE SNIPPET
+        async function likeSnippet() {
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/snippets/${snippetId}/like`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const data = await response.json();
+                if (!response.ok) return;
+
+                const likeCount = document.getElementById('like-count');
+                const likeBtn = document.getElementById('like-btn');
+                let count = parseInt(likeCount.textContent);
+
+                if (data.liked) {
+                    likeCount.textContent = count + 1;
+                    likeBtn.classList.add('liked');
+                    saveLiked(snippetId);
+                } else {
+                    likeCount.textContent = count - 1;
+                    likeBtn.classList.remove('liked');
+                    removeLiked(snippetId);
+                }
+
+            } catch (error) {
+                console.error('Like failed:', error);
+            }
+        }
+
+        // EDIT SNIPPET
+        function editSnippet() {
+            window.location.href = `editor.html?id=${snippetId}`;
+        }
+
+        // DELETE SNIPPET
+        async function deleteSnippet() {
+            if (!confirm('Are you sure you want to delete this snippet?')) return;
+
+            try {
+                const response = await fetch(`/api/snippets/${snippetId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) return;
+
+                window.location.href = 'feed.html';
+
+            } catch (error) {
+                console.error('Delete failed:', error);
+            }
+        }
+        // FORK SNIPPET
+async function forkSnippet() {
+    if (!token) {
+        window.location.href = 'login.html';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/snippets/${snippetId}/fork`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            alert('Fork failed!');
+            return;
+        }
+
+        if (confirm('Snippet forked! Open in editor?')) {
+            window.location.href = `editor.html?id=${data.snippetId}`;
+        }
+
+    } catch (error) {
+        console.error('Fork failed:', error);
+    }
+}
+        // DELETE COMMENT
+        async function deleteComment(commentId) {
+            if (!confirm('Delete this comment?')) return;
+
+            try {
+                const response = await fetch(`/api/comments/${commentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) return;
+
+                document.getElementById(`comment-${commentId}`).remove();
+
+                const countEl = document.getElementById('comment-count');
+                countEl.textContent = parseInt(countEl.textContent) - 1;
+
+            } catch (error) {
+                console.error('Delete comment failed:', error);
+            }
+        }
+
+        // AI CODE EXPLAINER
+        async function explainCode() {
+            const snippet = window.currentSnippet;
+            if (!snippet) return;
+
+            const btn = document.getElementById('explain-btn');
+            const responseBox = document.getElementById('ai-response');
+
+            btn.textContent = '⏳ Explaining...';
+            btn.disabled = true;
+            responseBox.classList.remove('hidden');
+            responseBox.textContent = 'AI is analyzing your code...';
+
+            const codeToExplain = `
+HTML:
+${snippet.html_code}
+
+CSS:
+${snippet.css_code}
+
+JavaScript:
+${snippet.js_code}
+            `;
+
+            try {
+                const response = await fetch('/api/snippets/explain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: codeToExplain })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    responseBox.textContent = 'AI explanation failed. Try again!';
+                    return;
+                }
+
+                responseBox.textContent = data.explanation;
+
+            } catch (error) {
+                responseBox.textContent = 'AI explanation failed. Try again!';
+            } finally {
+                btn.textContent = '✨ Explain This Code';
+                btn.disabled = false;
+            }
+        }
+
+        // COPY LINK
+        function copyLink() {
+            navigator.clipboard.writeText(window.location.href);
+            alert('Link copied to clipboard!');
+        }
+
+        // TRACK LIKED SNIPPETS
+        function isLiked(snippetId) {
+            const liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            return liked.includes(parseInt(snippetId));
+        }
+
+        function saveLiked(snippetId) {
+            const liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            if (!liked.includes(parseInt(snippetId))) {
+                liked.push(parseInt(snippetId));
+                localStorage.setItem('likedSnippets', JSON.stringify(liked));
+            }
+        }
+
+        function removeLiked(snippetId) {
+            let liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            liked = liked.filter(id => id !== parseInt(snippetId));
+            localStorage.setItem('likedSnippets', JSON.stringify(liked));
+        }
+
+        // FORMAT DATE
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-IN', {
+                day: 'numeric', month: 'short', year: 'numeric'
+            });
+        }
+
+        // ESCAPE HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = 'index.html';
+        }
+    </script>
+
+</body>
+</html>

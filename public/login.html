@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - CodeHive</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">Code<span>Hive</span></a>
+        <ul class="nav-links">
+            <li><a href="register.html">Register</a></li>
+        </ul>
+    </nav>
+
+    <!-- LOGIN FORM -->
+    <div class="auth-container">
+        <div class="auth-box">
+            <h2>Welcome Back!</h2>
+            <p>Login to your CodeHive account</p>
+
+            <div class="alert alert-error" id="error-msg"></div>
+            <div class="alert alert-success" id="success-msg"></div>
+
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" placeholder="Enter email" />
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="Enter password" />
+            </div>
+
+            <button class="btn btn-primary" onclick="login()">Login</button>
+
+            <div class="auth-footer">
+                Don't have an account? <a href="register.html">Register here</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function login() {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            const errorMsg = document.getElementById('error-msg');
+            const successMsg = document.getElementById('success-msg');
+
+            // Hide previous messages
+            errorMsg.classList.remove('show');
+            successMsg.classList.remove('show');
+
+            // Basic validation
+            if (!email || !password) {
+                errorMsg.textContent = 'All fields are required!';
+                errorMsg.classList.add('show');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorMsg.textContent = data.message;
+                    errorMsg.classList.add('show');
+                    return;
+                }
+
+                // Save token and user info to localStorage
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+
+                successMsg.textContent = 'Login successful! Redirecting...';
+                successMsg.classList.add('show');
+
+                setTimeout(() => {
+                    window.location.href = 'feed.html';
+                }, 1000);
+
+            } catch (error) {
+                errorMsg.textContent = 'Something went wrong. Try again!';
+                errorMsg.classList.add('show');
+            }
+        }
+    </script>
+
+</body>
+</html>

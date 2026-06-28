@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor - CodeHive</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+
+    <!-- CodeMirror JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">Code<span>Hive</span></a>
+        <ul class="nav-links">
+            <li><a href="feed.html">Community</a></li>
+            <li><a href="#" onclick="logout()">Logout</a></li>
+        </ul>
+    </nav>
+
+    <!-- EDITOR TOOLBAR -->
+    <div class="editor-toolbar">
+        <input type="text" id="snippet-title" placeholder="Snippet title..." />
+        <label style="color: var(--text-secondary); font-size: 0.9rem;">
+            <input type="checkbox" id="is-public" checked />
+            Make Public
+        </label>
+        <div class="toolbar-right">
+            <button class="btn btn-secondary" onclick="runPreview()">▶ Run</button>
+            <button class="btn btn-primary" onclick="saveSnippet()">💾 Save</button>
+        </div>
+    </div>
+
+    <!-- EDITOR PANELS -->
+    <div class="editor-container">
+        <div class="editor-panels">
+
+            <!-- HTML PANEL -->
+            <div class="editor-panel">
+                <div class="panel-header html">HTML</div>
+                <textarea id="html-editor"></textarea>
+            </div>
+
+            <!-- CSS PANEL -->
+            <div class="editor-panel">
+                <div class="panel-header css">CSS</div>
+                <textarea id="css-editor"></textarea>
+            </div>
+
+            <!-- JS PANEL -->
+            <div class="editor-panel">
+                <div class="panel-header js">JS</div>
+                <textarea id="js-editor"></textarea>
+            </div>
+
+        </div>
+
+        <!-- LIVE PREVIEW -->
+        <div class="preview-section">
+            <div class="preview-header">
+                <div class="dot"></div>
+                LIVE PREVIEW
+            </div>
+            <iframe id="preview-frame"></iframe>
+        </div>
+    </div>
+
+    <!-- SAVE STATUS -->
+    <div id="save-status" style="
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.7rem 1.2rem;
+        font-size: 0.9rem;
+        display: none;
+        z-index: 999;
+    "></div>
+
+    <script>
+        // Check login
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = 'login.html';
+        }
+
+        // Check if edit mode (URL has ?id=)
+        const urlParams = new URLSearchParams(window.location.search);
+        const editId = urlParams.get('id');
+
+        // Initialize CodeMirror editors
+        const htmlEditor = CodeMirror.fromTextArea(document.getElementById('html-editor'), {
+            mode: 'htmlmixed',
+            theme: 'dracula',
+            lineNumbers: true,
+            autoCloseTags: true,
+            indentUnit: 2,
+            tabSize: 2,
+        });
+
+        const cssEditor = CodeMirror.fromTextArea(document.getElementById('css-editor'), {
+            mode: 'css',
+            theme: 'dracula',
+            lineNumbers: true,
+            indentUnit: 2,
+            tabSize: 2,
+        });
+
+        const jsEditor = CodeMirror.fromTextArea(document.getElementById('js-editor'), {
+            mode: 'javascript',
+            theme: 'dracula',
+            lineNumbers: true,
+            indentUnit: 2,
+            tabSize: 2,
+        });
+
+        // If edit mode, load existing snippet
+        if (editId) {
+            loadSnippetForEdit(editId);
+        } else {
+            // Set default starter code for new snippet
+            htmlEditor.setValue(`<h1>Hello CodeHive!</h1>\n<p>Start coding here...</p>`);
+            cssEditor.setValue(`body {\n  font-family: sans-serif;\n  text-align: center;\n  padding: 2rem;\n  background: #f0f0f0;\n}`);
+            jsEditor.setValue(`console.log('CodeHive Editor Ready!');`);
+            runPreview();
+        }
+
+        // Load snippet data for editing
+        async function loadSnippetForEdit(id) {
+            try {
+                const response = await fetch(`/api/snippets/${id}`);
+                const snippet = await response.json();
+
+                if (!response.ok) {
+                    window.location.href = 'feed.html';
+                    return;
+                }
+
+                // Fill editor with existing code
+                document.getElementById('snippet-title').value = snippet.title;
+                document.getElementById('is-public').checked = snippet.is_public;
+                htmlEditor.setValue(snippet.html_code || '');
+                cssEditor.setValue(snippet.css_code || '');
+                jsEditor.setValue(snippet.js_code || '');
+
+                // Change save button text
+                document.querySelector('.toolbar-right .btn-primary').textContent = '✏️ Update';
+
+                runPreview();
+
+            } catch (error) {
+                console.error('Failed to load snippet:', error);
+            }
+        }
+
+        // Auto run preview as user types
+        htmlEditor.on('change', runPreview);
+        cssEditor.on('change', runPreview);
+        jsEditor.on('change', runPreview);
+
+        // LIVE PREVIEW FUNCTION
+        function runPreview() {
+            const html = htmlEditor.getValue();
+            const css = cssEditor.getValue();
+            const js = jsEditor.getValue();
+
+            const previewContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>${css}</style>
+                </head>
+                <body>
+                    ${html}
+                    <script>${js}<\/script>
+                </body>
+                </html>
+            `;
+
+            const iframe = document.getElementById('preview-frame');
+            iframe.srcdoc = previewContent;
+        }
+
+        // SAVE OR UPDATE SNIPPET
+        async function saveSnippet() {
+            const title = document.getElementById('snippet-title').value.trim();
+            const is_public = document.getElementById('is-public').checked;
+
+            if (!title) {
+                showStatus('Please enter a title!', 'error');
+                return;
+            }
+
+            const body = {
+                title,
+                html_code: htmlEditor.getValue(),
+                css_code: cssEditor.getValue(),
+                js_code: jsEditor.getValue(),
+                is_public
+            };
+
+            try {
+                // Edit mode → PUT, New mode → POST
+                const url = editId ? `/api/snippets/${editId}` : '/api/snippets';
+                const method = editId ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showStatus(data.message, 'error');
+                    return;
+                }
+
+                showStatus(editId ? 'Snippet updated! ✅' : 'Snippet saved! ✅', 'success');
+
+            } catch (error) {
+                showStatus('Save failed. Try again!', 'error');
+            }
+        }
+
+        // SHOW STATUS MESSAGE
+        function showStatus(message, type) {
+            const status = document.getElementById('save-status');
+            status.textContent = message;
+            status.style.display = 'block';
+            status.style.color = type === 'success' ? 'var(--success)' : 'var(--accent)';
+            status.style.borderColor = type === 'success' ? 'var(--success)' : 'var(--accent)';
+
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = 'index.html';
+        }
+    </script>
+
+</body>
+</html>

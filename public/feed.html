@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Feed - CodeHive</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="index.html" class="logo">Code<span>Hive</span></a>
+        <ul class="nav-links">
+            <li id="nav-editor" class="hidden"><a href="editor.html">New Snippet</a></li>
+            <li id="nav-profile" class="hidden"><a href="profile.html">👤 Profile</a></li>
+            <li id="nav-logout" class="hidden"><a href="#" onclick="logout()">Logout</a></li>
+            <li id="nav-login"><a href="login.html" class="btn-nav">Login</a></li>
+        </ul>
+    </nav>
+
+    <!-- FEED CONTAINER -->
+    <div class="feed-container">
+        <div class="feed-header">
+            <h1>Community <span>Feed</span></h1>
+            <a href="editor.html" class="btn btn-primary" id="new-snippet-btn">+ New Snippet</a>
+        </div>
+
+        <!-- SEARCH BAR -->
+        <div style="margin-bottom: 1.5rem;">
+            <input type="text" id="search-input" placeholder="🔍 Search snippets..."
+            style="width:100%; padding:0.8rem 1rem; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; color:var(--text-primary); font-size:0.95rem; outline:none;">
+        </div>
+
+        <!-- SNIPPETS LIST -->
+        <div class="snippets-grid" id="snippets-grid">
+            <p style="color: var(--text-secondary);">Loading snippets...</p>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+
+        // Update navbar based on login status
+        if (token) {
+            document.getElementById('nav-login').classList.add('hidden');
+            document.getElementById('nav-logout').classList.remove('hidden');
+            document.getElementById('nav-editor').classList.remove('hidden');
+            document.getElementById('nav-profile').classList.remove('hidden');
+        }
+
+        // Load feed on page load
+        loadFeed();
+
+        async function loadFeed() {
+            try {
+                const response = await fetch('/api/snippets/feed');
+                const snippets = await response.json();
+
+                const grid = document.getElementById('snippets-grid');
+
+                if (snippets.length === 0) {
+                    grid.innerHTML = `<p style="color: var(--text-secondary);">No snippets yet. Be the first to share!</p>`;
+                    return;
+                }
+
+                grid.innerHTML = snippets.map(snippet => `
+                    <div class="snippet-card" id="card-${snippet.id}">
+                        <h3 onclick="viewSnippet(${snippet.id})" style="cursor:pointer;">${escapeHtml(snippet.title)}</h3>
+                        <div class="snippet-meta">
+                            <span>👤 ${escapeHtml(snippet.username)}</span>
+                            <span>🕒 ${formatDate(snippet.created_at)}</span>
+                        </div>
+                        <div class="snippet-actions">
+                            <button class="action-btn ${isLiked(snippet.id) ? 'liked' : ''}" 
+                                onclick="likeSnippet(${snippet.id}, this)">
+                                ❤️ <span class="like-count">${snippet.like_count}</span>
+                            </button>
+                            <button class="action-btn" onclick="viewSnippet(${snippet.id})">
+                                💬 ${snippet.comment_count}
+                            </button>
+                            <button class="action-btn" onclick="viewSnippet(${snippet.id})">
+                                👁️ View
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                document.getElementById('snippets-grid').innerHTML = `
+                    <p style="color: var(--accent);">Failed to load snippets. Try refreshing!</p>
+                `;
+            }
+        }
+
+        // SEARCH FEATURE
+        document.getElementById('search-input').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
+            const cards = document.querySelectorAll('.snippet-card');
+
+            cards.forEach(card => {
+                const title = card.querySelector('h3').textContent.toLowerCase();
+                const author = card.querySelector('.snippet-meta span').textContent.toLowerCase();
+
+                if (title.includes(searchTerm) || author.includes(searchTerm)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+
+        // LIKE SNIPPET
+        async function likeSnippet(snippetId, btn) {
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/snippets/${snippetId}/like`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) return;
+
+                const likeCount = btn.querySelector('.like-count');
+                let count = parseInt(likeCount.textContent);
+
+                if (data.liked) {
+                    likeCount.textContent = count + 1;
+                    btn.classList.add('liked');
+                    saveLiked(snippetId);
+                } else {
+                    likeCount.textContent = count - 1;
+                    btn.classList.remove('liked');
+                    removeLiked(snippetId);
+                }
+
+            } catch (error) {
+                console.error('Like failed:', error);
+            }
+        }
+
+        // VIEW SNIPPET
+        function viewSnippet(id) {
+            window.location.href = `snippet.html?id=${id}`;
+        }
+
+        // TRACK LIKED SNIPPETS IN LOCALSTORAGE
+        function isLiked(snippetId) {
+            const liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            return liked.includes(snippetId);
+        }
+
+        function saveLiked(snippetId) {
+            const liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            if (!liked.includes(snippetId)) {
+                liked.push(snippetId);
+                localStorage.setItem('likedSnippets', JSON.stringify(liked));
+            }
+        }
+
+        function removeLiked(snippetId) {
+            let liked = JSON.parse(localStorage.getItem('likedSnippets') || '[]');
+            liked = liked.filter(id => id !== snippetId);
+            localStorage.setItem('likedSnippets', JSON.stringify(liked));
+        }
+
+        // FORMAT DATE
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-IN', {
+                day: 'numeric', month: 'short', year: 'numeric'
+            });
+        }
+
+        // ESCAPE HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = 'index.html';
+        }
+    </script>
+
+</body>
+</html>
