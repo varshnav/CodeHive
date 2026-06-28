@@ -2,8 +2,8 @@
 
 > A community platform for students to write, share, and explore HTML/CSS/JS code snippets with live preview.
 
-## 🔗 Live Demo
-**[https://codehive-d1ip.onrender.com](https://codehive-d1ip.onrender.com)**
+## 🔗 Live 
+[https://codehive-d1ip.onrender.com]
 
 ## 💡 Problem
 Developers and students have no dedicated platform to write, test, and share code snippets with a community.
