@@ -16,6 +16,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
@@ -96,6 +99,8 @@
             window.location.href = 'login.html';
         }
 
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+
         // Check if edit mode (URL has ?id=)
         const urlParams = new URLSearchParams(window.location.search);
         const editId = urlParams.get('id');
@@ -130,14 +135,13 @@
         if (editId) {
             loadSnippetForEdit(editId);
         } else {
-            // Set default starter code for new snippet
             htmlEditor.setValue(`<h1>Hello CodeHive!</h1>\n<p>Start coding here...</p>`);
             cssEditor.setValue(`body {\n  font-family: sans-serif;\n  text-align: center;\n  padding: 2rem;\n  background: #f0f0f0;\n}`);
             jsEditor.setValue(`console.log('CodeHive Editor Ready!');`);
             runPreview();
         }
 
-        // Load snippet data for editing
+        // Load snippet for editing
         async function loadSnippetForEdit(id) {
             try {
                 const response = await fetch(`/api/snippets/${id}`);
@@ -148,14 +152,12 @@
                     return;
                 }
 
-                // Fill editor with existing code
                 document.getElementById('snippet-title').value = snippet.title;
                 document.getElementById('is-public').checked = snippet.is_public;
                 htmlEditor.setValue(snippet.html_code || '');
                 cssEditor.setValue(snippet.css_code || '');
                 jsEditor.setValue(snippet.js_code || '');
 
-                // Change save button text
                 document.querySelector('.toolbar-right .btn-primary').textContent = '✏️ Update';
 
                 runPreview();
@@ -165,12 +167,12 @@
             }
         }
 
-        // Auto run preview as user types
+        // Auto preview
         htmlEditor.on('change', runPreview);
         cssEditor.on('change', runPreview);
         jsEditor.on('change', runPreview);
 
-        // LIVE PREVIEW FUNCTION
+        // LIVE PREVIEW
         function runPreview() {
             const html = htmlEditor.getValue();
             const css = cssEditor.getValue();
@@ -179,9 +181,7 @@
             const previewContent = `
                 <!DOCTYPE html>
                 <html>
-                <head>
-                    <style>${css}</style>
-                </head>
+                <head><style>${css}</style></head>
                 <body>
                     ${html}
                     <script>${js}<\/script>
@@ -212,7 +212,6 @@
             };
 
             try {
-                // Edit mode → PUT, New mode → POST
                 const url = editId ? `/api/snippets/${editId}` : '/api/snippets';
                 const method = editId ? 'PUT' : 'POST';
 
@@ -239,7 +238,7 @@
             }
         }
 
-        // SHOW STATUS MESSAGE
+        // SHOW STATUS
         function showStatus(message, type) {
             const status = document.getElementById('save-status');
             status.textContent = message;
@@ -251,6 +250,111 @@
                 status.style.display = 'none';
             }, 3000);
         }
+
+        // ===== REAL-TIME COLLABORATION =====
+        const urlSnippetId = urlParams.get('id') || 'new';
+        const currentUser = user ? user.username : 'Anonymous';
+
+        // Connect to socket
+        const socket = io();
+
+        // Join room
+        socket.emit('join-room', {
+            snippetId: urlSnippetId,
+            username: currentUser
+        });
+
+        // Show who's in the room
+        socket.on('room-users', (users) => {
+            const existingBar = document.getElementById('collab-bar');
+            if (existingBar) existingBar.remove();
+
+            const bar = document.createElement('div');
+            bar.id = 'collab-bar';
+            bar.style.cssText = `
+                position: fixed;
+                top: 60px;
+                right: 1rem;
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 0.5rem 1rem;
+                font-size: 0.85rem;
+                color: var(--text-secondary);
+                z-index: 999;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            `;
+            bar.innerHTML = `
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--success);"></div>
+                ${users.length} online: ${users.join(', ')}
+            `;
+            document.body.appendChild(bar);
+        });
+
+        // Someone joined
+        socket.on('user-joined', (username) => {
+            showStatus(`${username} joined! 👋`, 'success');
+        });
+
+        // Someone left
+        socket.on('user-left', (username) => {
+            showStatus(`${username} left`, 'error');
+        });
+
+        // Send code changes
+        let isReceiving = false;
+
+        htmlEditor.on('change', (cm, change) => {
+            if (!isReceiving && change.origin !== 'setValue') {
+                socket.emit('code-change', {
+                    snippetId: urlSnippetId,
+                    type: 'html',
+                    value: cm.getValue()
+                });
+            }
+        });
+
+        cssEditor.on('change', (cm, change) => {
+            if (!isReceiving && change.origin !== 'setValue') {
+                socket.emit('code-change', {
+                    snippetId: urlSnippetId,
+                    type: 'css',
+                    value: cm.getValue()
+                });
+            }
+        });
+
+        jsEditor.on('change', (cm, change) => {
+            if (!isReceiving && change.origin !== 'setValue') {
+                socket.emit('code-change', {
+                    snippetId: urlSnippetId,
+                    type: 'js',
+                    value: cm.getValue()
+                });
+            }
+        });
+
+        // Receive code changes
+        socket.on('code-update', ({ type, value }) => {
+            isReceiving = true;
+            if (type === 'html') htmlEditor.setValue(value);
+            if (type === 'css') cssEditor.setValue(value);
+            if (type === 'js') jsEditor.setValue(value);
+            isReceiving = false;
+        });
+
+        // Send cursor position
+        htmlEditor.on('cursorActivity', (cm) => {
+            const cursor = cm.getCursor();
+            socket.emit('cursor-move', {
+                snippetId: urlSnippetId,
+                username: currentUser,
+                line: cursor.line,
+                ch: cursor.ch
+            });
+        });
 
         function logout() {
             localStorage.removeItem('token');
