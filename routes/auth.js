@@ -2,12 +2,46 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const db = require('../config/db');
 require('dotenv').config();
 
+// Validation middleware
+const registerValidation = [
+    body('username')
+        .trim()
+        .isLength({ min: 3, max: 20 })
+        .withMessage('Username must be 3-20 characters')
+        .isAlphanumeric()
+        .withMessage('Username must contain only letters and numbers'),
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Please enter a valid email'),
+    body('password')
+        .isLength({ min: 6 })
+        .withMessage('Password must be at least 6 characters')
+];
+
+const loginValidation = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Please enter a valid email'),
+    body('password')
+        .notEmpty()
+        .withMessage('Password is required')
+];
+
 // REGISTER
-router.post('/register', async (req, res) => {
+router.post('/register', registerValidation, async (req, res) => {
     try {
+        // Check validation errors
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ message: errors.array()[0].msg });
+        }
+
         const { username, email, password } = req.body;
 
         // Check if user already exists
@@ -38,8 +72,14 @@ router.post('/register', async (req, res) => {
 });
 
 // LOGIN
-router.post('/login', async (req, res) => {
+router.post('/login', loginValidation, async (req, res) => {
     try {
+        // Check validation errors
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ message: errors.array()[0].msg });
+        }
+
         const { email, password } = req.body;
 
         // Check if user exists

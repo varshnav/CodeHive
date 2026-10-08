@@ -2,7 +2,23 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
+const { JSDOM } = require('jsdom');
+const createDOMPurify = require('dompurify');
 require('dotenv').config();
+
+// Setup DOMPurify
+const window = new JSDOM('').window;
+const DOMPurify = createDOMPurify(window);
+
+// Sanitize code helper
+function sanitizeCode(code) {
+    if (!code) return '';
+    return DOMPurify.sanitize(code, {
+        FORCE_BODY: true,
+        ALLOW_UNKNOWN_PROTOCOLS: true
+    });
+}
 
 // Middleware - verify JWT token
 function verifyToken(req, res, next) {
@@ -27,13 +43,21 @@ router.post('/', verifyToken, async (req, res) => {
     try {
         const { title, html_code, css_code, js_code, is_public } = req.body;
 
-        if (!title) {
+        if (!title || title.trim() === '') {
             return res.status(400).json({ message: 'Title is required' });
         }
 
+        if (title.length > 100) {
+            return res.status(400).json({ message: 'Title must be under 100 characters' });
+        }
+
+        const sanitizedHtml = sanitizeCode(html_code);
+        const sanitizedCss = sanitizeCode(css_code);
+        const sanitizedJs = sanitizeCode(js_code);
+
         const [result] = await db.query(
             'INSERT INTO snippets (user_id, title, html_code, css_code, js_code, is_public) VALUES (?, ?, ?, ?, ?, ?)',
-            [req.user.id, title, html_code || '', css_code || '', js_code || '', is_public ?? true]
+            [req.user.id, title.trim(), sanitizedHtml, sanitizedCss, sanitizedJs, is_public ?? true]
         );
 
         res.status(201).json({
@@ -72,7 +96,7 @@ router.get('/feed', async (req, res) => {
     }
 });
 
-// AI CODE EXPLAINER - Gemini (ULTRA DIRECT PASS SYSTEM)
+// AI CODE EXPLAINER - Gemini
 router.post('/explain', async (req, res) => {
     try {
         const { code } = req.body;
@@ -81,46 +105,46 @@ router.post('/explain', async (req, res) => {
             return res.status(400).json({ message: 'No code provided' });
         }
 
-        const apiSecret = process.env.GEMINI_API_KEY;
+        let attempts = 0;
+        let data;
+        let response;
 
-        if (!apiSecret || apiSecret === 'your_actual_gemini_api_key_here' || apiSecret === '') {
-            return res.json({ 
-                explanation: `✨ [Local AI Tutor Mode Enabled]\n\n• HTML: Forms the baseline structure of your workspace UI.\n• CSS: Injects standard styles and layouts.\n• JS: Controls interactive event triggers inside the browser.\n\n(Note: Setup GEMINI_API_KEY inside your .env for live AI tutoring updates!)` 
+        while (attempts < 3) {
+            response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: `You are a helpful coding teacher. Explain the following HTML, CSS, and JavaScript code in simple English. Be beginner friendly, clear, and concise.\n\n${code}`
+                        }]
+                    }]
+                })
             });
+
+            data = await response.json();
+
+            if (response.ok) break;
+
+            if (data.error && data.error.code === 503) {
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            } else {
+                break;
+            }
         }
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiSecret}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ 
-                    parts: [{ 
-                        text: `You are a helpful coding teacher. Explain the following HTML, CSS, and JavaScript code in simple English. Be beginner friendly and clear.\n\n${code}` 
-                    }] 
-                }]
-            })
-        });
-
-        const data = await response.json();
-
-        // 1. Check for real generated output data text
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-            return res.json({ explanation: data.candidates[0].content.parts[0].text });
+        if (!response.ok) {
+            console.error('Gemini API error:', data);
+            return res.status(500).json({ message: 'AI explanation failed. Try again!' });
         }
 
-        // 2. Clear block if google drops API violations/errors (Fallback gracefully so user never sees block breaks)
-        if (data.error || data.details || !response.ok) {
-            console.log("Google Network Intercept details:", JSON.stringify(data));
-            return res.json({
-                explanation: `💡 Fast-Tutor Summary:\n\nYour code workspace layout looks 100% clean and correct! The HTML tags create the layout skeleton nodes, your CSS classes apply structural theme colors, and JavaScript controls browser runtimes successfully.\n\n(Google AI Studio is currently validating your key permissions metadata across cloud networks, please check back in a few minutes!)`
-            });
-        }
-
-        res.status(500).json({ message: 'AI explanation parsing failed' });
+        const explanation = data.candidates[0].content.parts[0].text;
+        res.json({ explanation });
 
     } catch (error) {
-        console.error('Crash Error Logging:', error);
-        res.status(500).json({ message: 'Server error parsing AI response.' });
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
@@ -152,7 +176,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// GET MY SNIPPETS (logged in user)
+// GET MY SNIPPETS
 router.get('/my/snippets', verifyToken, async (req, res) => {
     try {
         const [snippets] = await db.query(
@@ -235,7 +259,6 @@ router.put('/:id', verifyToken, async (req, res) => {
     try {
         const { title, html_code, css_code, js_code, is_public } = req.body;
 
-        // Check if snippet belongs to this user
         const [snippet] = await db.query(
             'SELECT id FROM snippets WHERE id = ? AND user_id = ?',
             [req.params.id, req.user.id]
@@ -245,9 +268,13 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Not allowed' });
         }
 
+        const sanitizedHtml = sanitizeCode(html_code);
+        const sanitizedCss = sanitizeCode(css_code);
+        const sanitizedJs = sanitizeCode(js_code);
+
         await db.query(
             'UPDATE snippets SET title=?, html_code=?, css_code=?, js_code=?, is_public=? WHERE id=?',
-            [title, html_code, css_code, js_code, is_public ?? true, req.params.id]
+            [title, sanitizedHtml, sanitizedCss, sanitizedJs, is_public ?? true, req.params.id]
         );
 
         res.json({ message: 'Snippet updated successfully' });
@@ -287,4 +314,5 @@ router.post('/:id/fork', verifyToken, async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+
 module.exports = router;
