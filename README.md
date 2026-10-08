@@ -24,7 +24,7 @@ CodeHive lets students write HTML/CSS/JS code, see a live preview instantly, and
 - 👤 User Profile Page — manage all your snippets
 - 🤖 AI Code Explainer powered by Google Gemini API
 - 📱 Mobile Responsive Design
-
+- 🔴 Real-time Collaborative Editing (Socket.io) — multiple users same snippet edit panlaam live
 ## 🛠️ Tech Stack
 | Part | Tech |
 |------|------|
